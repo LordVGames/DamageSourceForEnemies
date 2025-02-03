@@ -3,7 +3,6 @@ using RoR2;
 using RoR2.Projectile;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
-using System.Reflection;
 
 namespace DamageSourceForEnemies
 {
@@ -248,7 +247,7 @@ namespace DamageSourceForEnemies
         internal static void SetupILHooks()
         {
             // welcome to hell, but not really
-            // it's a lot of hooks but the majority of them just use one of the methods from ILEdits
+            // it's a lot of hooks and the majority of them just use one of the methods from ILEdits
 
 
             // a bunch of enemy attacks inherit BasicMeleeAttack, some of which don't have an OnEnter to hook into
@@ -619,7 +618,6 @@ namespace DamageSourceForEnemies
             #endregion
 
 
-            // TODO maybe make this a function?
             #region Phase 3 waves
             c.Index = 0;
             if (!c.TryGotoNext(MoveType.After,
@@ -707,7 +705,6 @@ namespace DamageSourceForEnemies
 
         private static void ClayBruiser_Weapon_MinigunFire_OnFireAuthority(ILContext il)
         {
-            // TODO go here if (when) we need to make a bullet changing function
             string methodName = "ClayBruiser.Weapon.MinigunFire.OnFireAuthority";
             ILCursor c = new(il);
             if (!c.TryGotoNext(MoveType.After,

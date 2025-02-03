@@ -1,8 +1,8 @@
 ﻿{
 	"name": "DamageSourceForEnemies",
-	"version_number": "0.0.3",
+	"version_number": "1.0.0",
 	"website_url": "",
-	"description": "Adds a DamageSource to nearly all enemy attacks. Does almost nothing on it's own.",
+	"description": "Adds a DamageSource to all vanilla & DLC enemy attacks. Does almost nothing on it's own.",
 	"dependencies": [
 		"bbepis-BepInExPack-5.4.2117",
 		"RiskofThunder-HookGenPatcher-1.2.5"

@@ -1,5 +1,4 @@
 using BepInEx;
-using RoR2;
 
 namespace DamageSourceForEnemies
 {
