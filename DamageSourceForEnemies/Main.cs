@@ -1,7 +1,9 @@
 using BepInEx;
+using R2API.Utils;
 
 namespace DamageSourceForEnemies
 {
+    [NetworkCompatibility(CompatibilityLevel.EveryoneMustHaveMod, VersionStrictness.EveryoneNeedSameModVersion)]
     [BepInPlugin(PluginGUID, PluginName, PluginVersion)]
     public class Plugin : BaseUnityPlugin
     {
