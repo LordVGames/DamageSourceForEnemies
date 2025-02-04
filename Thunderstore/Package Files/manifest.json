@@ -1,7 +1,7 @@
 ﻿{
 	"name": "DamageSourceForEnemies",
 	"version_number": "1.0.0",
-	"website_url": "",
+	"website_url": "https://github.com/LordVGames/DamageSourceForEnemies",
 	"description": "Adds a DamageSource to all vanilla & DLC enemy attacks. Does almost nothing on it's own.",
 	"dependencies": [
 		"bbepis-BepInExPack-5.4.2117",
