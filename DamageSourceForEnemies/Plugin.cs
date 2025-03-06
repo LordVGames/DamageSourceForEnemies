@@ -10,10 +10,12 @@ namespace DamageSourceForEnemies
         public const string PluginGUID = PluginAuthor + "." + PluginName;
         public const string PluginAuthor = "LordVGames";
         public const string PluginName = "DamageSourceForEnemies";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.1.0";
         public void Awake()
         {
             Log.Init(Logger);
+            ConfigOptions.BindConfigEntries(Config);
+            AssetEdits.EditAssetsBasedOnConfig();
             ILHooks.SetupILHooks();
 #if DEBUG
             On.RoR2.CharacterMaster.OnBodyDamaged += CharacterMaster_OnBodyDamaged;
@@ -24,7 +26,7 @@ namespace DamageSourceForEnemies
         private void CharacterMaster_OnBodyDamaged(On.RoR2.CharacterMaster.orig_OnBodyDamaged orig, CharacterMaster self, DamageReport damageReport)
         {
             orig(self, damageReport);
-            Log.Debug($"damageReport.damageInfo.damageType.damageSource == {damageReport.damageInfo.damageType.damageSource}");
+            Log.Debug($"damageSource == {damageReport.damageInfo.damageType.damageSource}");
         }
 #endif
     }

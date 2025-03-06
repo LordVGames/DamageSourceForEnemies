@@ -10,10 +10,9 @@ namespace DamageSourceForEnemies
     {
         private static class Util
         {
-            internal static void LogILSuccess(string methodName, ILContext il, ILCursor c)
+            internal static void LogCurrentIL(ILContext il, ILCursor c)
             {
 #if DEBUG
-                Log.Warning($"SUCCESSFULLY IL HOOKED {methodName}!");
                 Log.Warning($"cursor is {c}");
                 Log.Warning($"il is {il}");
 #endif
@@ -29,21 +28,38 @@ namespace DamageSourceForEnemies
 
         private static class ILEdits
         {
-            internal static void ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo newGenericDamageTypeCombo, string hookedMethodName, int localILVariableInt, ILContext il, ILCursor c)
+            internal static void AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo newGenericDamageTypeCombo, string hookedMethodName, int localILVariableInt, ILContext il, ILCursor c)
             {
-                if (!c.TryGotoNext(MoveType.After,
-                    x => x.MatchLdloca(localILVariableInt),
-                    x => x.MatchInitobj(out _),
-                    x => x.MatchLdloc(localILVariableInt)
+                // add our DamageTypeCombo
+                if (!c.TryGotoNext(MoveType.Before,
+                    x => x.MatchCallvirt<ProjectileManager>("FireProjectileWithoutDamageType")
                 ))
                 {
                     Util.LogILError(hookedMethodName, il, c);
                     return;
                 }
-                c.EmitDelegate<Func<DamageTypeCombo, DamageTypeCombo?>>((oldNullValue) =>
+                c.EmitDelegate<Func<DamageTypeCombo?>>(() =>
                 {
                     return new DamageTypeCombo?(newGenericDamageTypeCombo);
                 });
+
+
+                // now we replace FireProjectileWithoutDamageType with the original FireProjectile that still exists for some reason
+                c.Index = 0;
+                if (!c.TryGotoNext(MoveType.AfterLabel,
+                    x => x.MatchCallvirt<ProjectileManager>("FireProjectileWithoutDamageType")
+                ))
+                {
+                    Util.LogILError(hookedMethodName, il, c);
+                    return;
+                }
+                
+                // so I KNOW doing .Remove is bad but my other option is to somehow duplicate 10 variables of different types and load them back twice
+                // and not only am i not sure how to do that but that happens 42 times
+                // plus the original FireProjectile is entirely the same aside from an extra parameter that's null by default anyways
+                // so im just gonna make this easier on myself and remove the singular line
+                c.Remove();
+                c.Emit<ProjectileManager>(OpCodes.Callvirt, "FireProjectile");
             }
 
             internal static void AddDamageTypeComboToFireProjectileInfo(DamageTypeCombo damageTypeCombo, string methodName, int localILVariableInt, ILContext il, ILCursor c)
@@ -120,7 +136,14 @@ namespace DamageSourceForEnemies
                 ExistingDamageType
             }
 
-            internal static void SetupForOverlapAttackDelegate(bool isAttackInEntityState, OverlapAttackMatchType overlapAttackMatchType, string methodName, ILContext il, ILCursor c)
+            /// <remarks>
+            /// This logs it's own error if this fails, so don't log another error yourself.
+            /// </remarks>
+            /// 
+            /// <returns>
+            /// true if the match was successful, false if not
+            /// </returns>
+            internal static bool SetupForOverlapAttackDelegate(bool isAttackInEntityState, OverlapAttackMatchType overlapAttackMatchType, string methodName, ILContext il, ILCursor c)
             {
                 bool couldNotMatch = false;
                 switch (overlapAttackMatchType)
@@ -149,7 +172,7 @@ namespace DamageSourceForEnemies
                 if (couldNotMatch)
                 {
                     Util.LogILError(methodName, il, c);
-                    return;
+                    return false;
                 }
 
 
@@ -161,6 +184,7 @@ namespace DamageSourceForEnemies
                 {
                     c.Emit(OpCodes.Dup);
                 }
+                return true;
             }
 
             internal enum BlastAttackMatchType
@@ -170,6 +194,9 @@ namespace DamageSourceForEnemies
                 ExistingDamageType
             }
 
+            /// <remarks>
+            /// Made this one a method since it's used twice
+            /// </remarks>
             private static bool MatchBasedOnBlastAttackMatchType(BlastAttackMatchType blastAttackMatchType, ILCursor c)
             {
                 switch (blastAttackMatchType)
@@ -209,7 +236,7 @@ namespace DamageSourceForEnemies
             }
 
             /// <remarks>
-            /// Cannot be used when the BlastAttack is attached to an EntityState, use <c>SetDamageSourceForBlastAttack</c> instead when doing that
+            /// Cannot be used when the BlastAttack is attached to an EntityState, use <see cref="SetupForBlastAttackDelegate"/> instead when doing that
             /// </remarks>
             internal static void SetDamageSourceForBlastAttack(DamageSource damageSource, BlastAttackMatchType blastAttackMatchType, string methodName, ILContext il, ILCursor c)
             {
@@ -230,17 +257,21 @@ namespace DamageSourceForEnemies
             }
 
             /// <remarks>
-            /// Use this instead of <c>SetDamageSourceForBlastAttack</c> when modifying a BlastAttack that's attached to an EntityState
+            /// Use this instead of <see cref="SetDamageSourceForBlastAttack"/> when modifying a BlastAttack that's attached to an EntityState
             /// </remarks>
-            internal static void SetupForBlastAttackDelegate(BlastAttackMatchType blastAttackMatchType, string methodName, ILContext il, ILCursor c)
+            /// <returns>
+            /// true if the match was successful, false if not
+            /// </returns>
+            internal static bool SetupForBlastAttackDelegate(BlastAttackMatchType blastAttackMatchType, string methodName, ILContext il, ILCursor c)
             {
                 if (!MatchBasedOnBlastAttackMatchType(blastAttackMatchType, c))
                 {
                     Util.LogILError(methodName, il, c);
-                    return;
+                    return false;
                 }
 
                 c.Emit(OpCodes.Ldarg_0);
+                return true;
             }
         }
 
@@ -290,16 +321,16 @@ namespace DamageSourceForEnemies
             IL.EntityStates.Drone.DroneWeapon.FireMissileBarrage.FireMissile += Drone_DroneWeapon_FireMissileBarrage_FireMissile;
             IL.EntityStates.Drone.DroneWeapon.FireTurret.OnEnter += Drone_DroneWeapon_FireTurret_OnEnter;
             IL.EntityStates.Drone.DroneWeapon.FireTwinRocket.FireProjectile += Drone_DroneWeapon_FireTwinRocket_FireProjectile;
-            // flamethrower drone's flamethrower is a primary but it inherts artificer's flamethrower
-            // which means the damagesource is already set to special. good enough ig so i'll just leave it as is
+            // flamethrower drone's flamethrower is a primary but it inherits artificer's flamethrower
+            // so we need to modify the damagesource through that
+            IL.EntityStates.Mage.Weapon.Flamethrower.FireGauntlet += Mage_Weapon_Flamethrower_FireGauntlet;
             IL.EntityStates.FalseSonBoss.CorruptedPaths.DetonateAuthority += FalseSonBoss_CorruptedPaths_DetonateAuthority;
             IL.EntityStates.FalseSonBoss.CorruptedPathsDash.FixedUpdate += FalseSonBoss_CorruptedPathsDash_FixedUpdate;
             IL.EntityStates.FalseSonBoss.FissureSlam.FixedUpdate += FalseSonBoss_FissureSlam_FixedUpdate;
             IL.EntityStates.FalseSonBoss.FissureSlam.DetonateAuthority += FalseSonBoss_FissureSlam_DetonateAuthority;
-            IL.EntityStates.FalseSonBoss.LunarGazeFire.FireBullet += FalseSonBoss_LunarGazeFire_FireBullet;
             IL.EntityStates.FalseSonBoss.LunarRain.DetonateAuthority += FalseSonBoss_LunarRain_DetonateAuthority;
             IL.EntityStates.FalseSonBoss.PrimeDevastator.DetonateAuthority += FalseSonBoss_PrimeDevastator_DetonateAuthority;
-            IL.EntityStates.FalseSonBoss.SwatAwayPlayersSlam.OnEnter += FalseSonBoss_SwatAwayPlayersSlam_OnEnter;
+            IL.EntityStates.FalseSonBoss.FalseSonBossGenericStateWithSwing.GenerateClubOverlapAttack += FalseSonBoss_FalseSonBossGenericStateWithSwing_GenerateClubOverlapAttack;
             IL.EntityStates.FalseSonBoss.TaintedOffering.FireProjectile += FalseSonBoss_TaintedOffering_FireProjectile;
             IL.EntityStates.FlyingVermin.Weapon.Spit.FireProjectile += FlyingVermin_Weapon_Spit_FireProjectile;
             IL.EntityStates.GolemMonster.ClapState.FixedUpdate += GolemMonster_ClapState_FixedUpdate;
@@ -310,7 +341,7 @@ namespace DamageSourceForEnemies
             IL.EntityStates.GravekeeperMonster.Weapon.GravekeeperBarrage.FireBlob += GravekeeperMonster_Weapon_GravekeeperBarrage_FireBlob;
             IL.EntityStates.GreaterWispMonster.FireCannons.OnEnter += GreaterWispMonster_FireCannons_OnEnter;
             IL.EntityStates.Halcyonite.TriLaser.FireTriLaser += Halcyonite_TriLaser_FireTriLaser;
-            IL.EntityStates.Halcyonite.WhirlwindRush.FixedUpdate += Halcyonite_WhirlwindRush_FixedUpdate;
+            IL.EntityStates.Halcyonite.WhirlWindPersuitCycle.UpdateAttack += Halcyonite_WhirlWindPersuitCycle_UpdateAttack;
             IL.EntityStates.HermitCrab.FireMortar.Fire += HermitCrab_FireMortar_Fire;
             IL.EntityStates.ImpBossMonster.FireVoidspikes.FireSpikeAuthority += ImpBossMonster_FireVoidspikes_FireSpikeAuthority;
             IL.EntityStates.ImpBossMonster.FireVoidspikes.OnEnter += ImpBossMonster_FireVoidspikes_OnEnter;
@@ -325,7 +356,7 @@ namespace DamageSourceForEnemies
             IL.EntityStates.LunarWisp.FireLunarGuns.OnFireAuthority += LunarWisp_FireLunarGuns_OnFireAuthority;
             IL.EntityStates.LunarWisp.SeekingBomb.FireBomb += LunarWisp_SeekingBomb_FireBomb;
             IL.EntityStates.MajorConstruct.Weapon.FireLaser.ModifyBullet += MajorConstruct_Weapon_FireLaser_ModifyBullet;
-            // TODO this doesn't affect the stuff on the floor the projectile leaves
+            // this doesn't affect the stuff on the floor the projectile leaves, just the initial hit
             IL.EntityStates.MiniMushroom.SporeGrenade.FireGrenade += MiniMushroom_SporeGrenade_FireGrenade;
             IL.EntityStates.NullifierMonster.FirePortalBomb.FireBomb += NullifierMonster_FirePortalBomb_FireBomb;
             IL.EntityStates.ParentMonster.GroundSlam.FixedUpdate += ParentMonster_GroundSlam_FixedUpdate;
@@ -357,6 +388,8 @@ namespace DamageSourceForEnemies
             IL.EntityStates.Vulture.Weapon.FireWindblade.OnEnter += Vulture_Weapon_FireWindblade_OnEnter;
             IL.EntityStates.Wisp1Monster.FireEmbers.OnEnter += Wisp1Monster_FireEmbers_OnEnter;
         }
+
+
 
         private static void BasicMeleeAttack_OnEnter(ILContext il)
         {
@@ -457,12 +490,17 @@ namespace DamageSourceForEnemies
         private static void BeetleGuardMonster_GroundSlam_OnEnter(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.SetupForOverlapAttackDelegate(
-                true,
-                ILEdits.OverlapAttackMatchType.BasicDamageCalculation,
-                "BeetleGuardMonster.GroundSlam.OnEnter",
-                il, c
-            );
+            if (!ILEdits.SetupForOverlapAttackDelegate(
+                    true,
+                    ILEdits.OverlapAttackMatchType.BasicDamageCalculation,
+                    "BeetleGuardMonster.GroundSlam.OnEnter",
+                    il, c
+                )
+            )
+            {
+                return;
+            }
+
             c.EmitDelegate<Action<EntityStates.BeetleGuardMonster.GroundSlam>>((bgGroundSlam) =>
             {
                 // need to null-check overlap attacks because multiplayer clients can get an NRE in without it
@@ -476,18 +514,28 @@ namespace DamageSourceForEnemies
         private static void BeetleGuardMonster_FireSunder_FixedUpdate(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericSecondary, "BeetleGuardMonster.FireSunder.FixedUpdate", 1, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
+                DamageTypeCombo.GenericSecondary,
+                "BeetleGuardMonster.FireSunder.FixedUpdate",
+                1,
+                il, c
+            );
         }
 
         private static void BeetleMonster_HeadbuttState_OnEnter(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.SetupForOverlapAttackDelegate(
-                true,
-                ILEdits.OverlapAttackMatchType.BasicDamageCalculation,
-                "BeetleMonster.HeadbuttState.OnEnter",
-                il, c
-            );
+            if (!ILEdits.SetupForOverlapAttackDelegate(
+                    true,
+                    ILEdits.OverlapAttackMatchType.BasicDamageCalculation,
+                    "BeetleMonster.HeadbuttState.OnEnter",
+                    il, c
+                )
+            )
+            {
+                return;
+            }
+
             c.EmitDelegate<Action<EntityStates.BeetleMonster.HeadbuttState>>((beetleHeadbutt) =>
             {
                 if (beetleHeadbutt != null && beetleHeadbutt.attack != null)
@@ -500,24 +548,39 @@ namespace DamageSourceForEnemies
         private static void BeetleQueenMonster_FireSpit_FireBlob(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericPrimary, "BeetleQueenMonster.FireSpit.FireBlob", 1, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
+                DamageTypeCombo.GenericPrimary,
+                "BeetleQueenMonster.FireSpit.FireBlob",
+                1,
+                il, c
+            );
         }
 
         private static void Bell_BellWeapon_ChargeTrioBomb_FixedUpdate(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericPrimary, "Bell.BellWeapon.ChargeTrioBomb.FixedUpdate", 7, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
+                DamageTypeCombo.GenericPrimary,
+                "Bell.BellWeapon.ChargeTrioBomb.FixedUpdate",
+                7,
+                il, c
+            );
         }
 
         private static void Bison_Headbutt_OnEnter(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.SetupForOverlapAttackDelegate(
-                true,
-                ILEdits.OverlapAttackMatchType.BasicDamageCalculation,
-                "Bison.Headbutt.OnEnter",
-                il, c
-            );
+            if (!ILEdits.SetupForOverlapAttackDelegate(
+                    true,
+                    ILEdits.OverlapAttackMatchType.BasicDamageCalculation,
+                    "Bison.Headbutt.OnEnter",
+                    il, c
+                )
+            )
+            {
+                return;
+            }
+
             c.EmitDelegate<Action<EntityStates.Bison.Headbutt>>((bisonHeadbutt) =>
             {
                 if (bisonHeadbutt != null && bisonHeadbutt.attack != null)
@@ -530,12 +593,17 @@ namespace DamageSourceForEnemies
         private static void Bison_Charge_ResetOverlapAttack(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.SetupForOverlapAttackDelegate(
-                true,
-                ILEdits.OverlapAttackMatchType.BasicDamageCalculation,
-                "Bison.Charge.ResetOverlapAttack",
-                il, c
-            );
+            if (!ILEdits.SetupForOverlapAttackDelegate(
+                    true,
+                    ILEdits.OverlapAttackMatchType.BasicDamageCalculation,
+                    "Bison.Charge.ResetOverlapAttack",
+                    il, c
+                )
+            )
+            {
+                return;
+            }
+
             c.EmitDelegate<Action<EntityStates.Bison.Charge>>((bisonChargeAttack) =>
             {
                 if (bisonChargeAttack != null && bisonChargeAttack.attack != null)
@@ -561,22 +629,24 @@ namespace DamageSourceForEnemies
         {
             string methodName = "BrotherMonster.FistSlam.FixedUpdate";
             ILCursor c = new(il);
+            if (!ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.AttackerIsGameObject, methodName, il, c))
+            {
+                return;
+            }
 
-            ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.AttackerIsGameObject, methodName, il, c);
             c.EmitDelegate<Action<EntityStates.BrotherMonster.FistSlam>>((fistSlamAttack) =>
             {
                 fistSlamAttack.attack.damageType.damageSource = DamageSource.Secondary;
             });
 
-            // resetting index to 0 might not be needed but the most it's probably doing is adding like 1ms to the load time
             c.Index = 0;
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericSecondary, methodName, 7, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericSecondary, methodName, 7, il, c);
         }
 
         private static void BrotherMonster_ExitSkyLeap_FireRingAuthority(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericSpecial, "BrotherMonster.ExitSkyLeap.FireRingAuthority", 5, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericSpecial, "BrotherMonster.ExitSkyLeap.FireRingAuthority", 5, il, c);
         }
 
         private static void BrotherMonster_WeaponSlam_OnEnter(ILContext il)
@@ -610,7 +680,10 @@ namespace DamageSourceForEnemies
 
 
             #region Extra BlastAttack that the attack does
-            ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.AttackerIsGameObject, methodName, il, c);
+            if (!ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.AttackerIsGameObject, methodName, il, c))
+            {
+                return;
+            }
             c.EmitDelegate<Action<EntityStates.BrotherMonster.WeaponSlam>>((weaponSlamAttack) =>
             {
                 weaponSlamAttack.blastAttack.damageType.damageSource = DamageSource.Primary;
@@ -627,7 +700,7 @@ namespace DamageSourceForEnemies
             {
                 Util.LogILError(methodName, il, c);
             }
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericPrimary, methodName, 7, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericPrimary, methodName, 7, il, c);
             #endregion
 
 
@@ -640,7 +713,7 @@ namespace DamageSourceForEnemies
             {
                 Util.LogILError(methodName, il, c);
             }
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericPrimary, methodName, 7, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericPrimary, methodName, 7, il, c);
             #endregion
         }
 
@@ -648,7 +721,7 @@ namespace DamageSourceForEnemies
         {
             // this isn't on mithrix's normal skill selection so i'm just gonna say it's from the special
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericSpecial, "BrotherMonster.UltChannelState.FireWave", 7, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericSpecial, "BrotherMonster.UltChannelState.FireWave", 7, il, c);
         }
 
         private static void BrotherMonster_Weapon_FireLunarShards_OnEnter(ILContext il)
@@ -665,13 +738,13 @@ namespace DamageSourceForEnemies
         private static void ChildMonster_SparkBallFire_FireBomb(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericPrimary, "ChildMonster.SparkBallFire.FireBomb", 3, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericPrimary, "ChildMonster.SparkBallFire.FireBomb", 3, il, c);
         }
 
         private static void ClayBoss_FireTarball_FireSingleTarball(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericSecondary, "ClayBoss.FireTarball.FireSingleTarball", 3, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericSecondary, "ClayBoss.FireTarball.FireSingleTarball", 3, il, c);
         }
 
         private static void TarTetherController_DoDamageTick(ILContext il)
@@ -700,7 +773,7 @@ namespace DamageSourceForEnemies
         private static void ClayBoss_ClayBossWeapon_FireBombardment_FireGrenade(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericPrimary, "ClayBoss.ClayBossWeapon.FireBombardment.FireGrenade", 20, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericPrimary, "ClayBoss.ClayBossWeapon.FireBombardment.FireGrenade", 20, il, c);
         }
 
         private static void ClayBruiser_Weapon_MinigunFire_OnFireAuthority(ILContext il)
@@ -730,15 +803,18 @@ namespace DamageSourceForEnemies
             // and im guessing if i do modify it then it'll be able to waste luminous shot charges
             string methodName = "ClayGrenadier.FaceSlam.FixedUpdate";
             ILCursor c = new(il);
+            if (!ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.ExistingDamageType, methodName, il, c))
+            {
+                return;
+            }
 
-            ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.ExistingDamageType, methodName, il, c);
             c.EmitDelegate<Action<EntityStates.ClayGrenadier.FaceSlam>>((faceSlamAttack) =>
             {
                 faceSlamAttack.attack.damageType.damageSource = DamageSource.Primary;
             });
 
             c.Index = 0;
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericPrimary, methodName, 7, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericPrimary, methodName, 7, il, c);
         }
 
         private static void Drone_DroneWeapon_FireGatling_OnEnter(ILContext il)
@@ -775,7 +851,7 @@ namespace DamageSourceForEnemies
         private static void Drone_DroneWeapon_FireMissileBarrage_FireMissile(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericPrimary, "Drone.DroneWeapon.FireMissileBarrage.FireMissile", 11, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericPrimary, "Drone.DroneWeapon.FireMissileBarrage.FireMissile", 11, il, c);
         }
 
         private static void Drone_DroneWeapon_FireTurret_OnEnter(ILContext il)
@@ -797,7 +873,33 @@ namespace DamageSourceForEnemies
         private static void Drone_DroneWeapon_FireTwinRocket_FireProjectile(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericSecondary, "Drone.DroneWeapon.FireTwinRocket.FireProjectile", 7, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericSecondary, "Drone.DroneWeapon.FireTwinRocket.FireProjectile", 7, il, c);
+        }
+
+        private static void Mage_Weapon_Flamethrower_FireGauntlet(ILContext il)
+        {
+            ILCursor c = new(il);
+            if (!c.TryGotoNext(MoveType.After,
+                x => x.MatchLdflda<BulletAttack>("damageType"),
+                x => x.MatchLdcI4(8),
+                x => x.MatchStfld<DamageTypeCombo>("damageSource")
+            ))
+            {
+                Util.LogILError("Mage.Weapon.Flamethrower.FireGauntlet", il, c);
+                return;
+            }
+
+            c.Emit(OpCodes.Dup);
+            c.Emit(OpCodes.Ldarg_0);
+            c.EmitDelegate<Action<BulletAttack, EntityStates.Mage.Weapon.Flamethrower>>((bulletAttack, entityState) =>
+            {
+                if (entityState.GetType() != typeof(EntityStates.Drone.DroneWeapon.Flamethrower))
+                {
+                    return;
+                }
+
+                bulletAttack.damageType.damageSource = DamageSource.Primary;
+            });
         }
 
         private static void FalseSonBoss_CorruptedPaths_DetonateAuthority(ILContext il)
@@ -836,7 +938,7 @@ namespace DamageSourceForEnemies
         private static void FalseSonBoss_FissureSlam_FixedUpdate(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericPrimary, "FalseSonBoss.FissureSlam.FixedUpdate", 4, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericPrimary, "FalseSonBoss.FissureSlam.FixedUpdate", 4, il, c);
         }
 
         private static void FalseSonBoss_FissureSlam_DetonateAuthority(ILContext il)
@@ -850,28 +952,6 @@ namespace DamageSourceForEnemies
             );
         }
 
-        private static void FalseSonBoss_LunarGazeFire_FireBullet(ILContext il)
-        {
-            // it's a special on the survivor but a utility on the boss???
-            // also SetupForBulletAttackDelegate doesn't work here
-            ILCursor c = new(il);
-            if (!c.TryGotoNext(MoveType.After,
-                x => x.MatchDup(),
-                x => x.MatchLdarg(4),
-                x => x.MatchCallvirt<BulletAttack>("set_maxDistance")
-            ))
-            {
-                Util.LogILError("FalseSonBoss.LunarGazeFire.FireBullet", il, c);
-                return;
-            }
-
-            c.Emit(OpCodes.Dup);
-            c.EmitDelegate<Action<BulletAttack>>((bulletAttack) =>
-            {
-                bulletAttack.damageType.damageSource = DamageSource.Utility;
-            });
-        }
-
         private static void FalseSonBoss_LunarRain_DetonateAuthority(ILContext il)
         {
             ILCursor c = new(il);
@@ -883,28 +963,10 @@ namespace DamageSourceForEnemies
             );
         }
 
-        private static void FalseSonBoss_SwatAwayPlayersSlam_OnEnter(ILContext il)
-        {
-            ILCursor c = new(il);
-            ILEdits.SetupForOverlapAttackDelegate(
-                false,
-                ILEdits.OverlapAttackMatchType.ExistingDamageType,
-                "FalseSonBoss.SwatAwayPlayersSlam.OnEnter",
-                il, c
-            );
-            c.EmitDelegate<Action<OverlapAttack>>((overlapAttack) =>
-            {
-                if (overlapAttack != null)
-                {
-                    overlapAttack.damageType.damageSource = DamageSource.Primary;
-                }
-            });
-        }
-
         private static void FalseSonBoss_TaintedOffering_FireProjectile(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericSpecial, "FalseSonBoss.TaintedOffering.FireProjectile", 1, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericSpecial, "FalseSonBoss.TaintedOffering.FireProjectile", 1, il, c);
         }
 
         private static void FalseSonBoss_PrimeDevastator_DetonateAuthority(ILContext il)
@@ -918,16 +980,43 @@ namespace DamageSourceForEnemies
             );
         }
 
+        private static void FalseSonBoss_FalseSonBossGenericStateWithSwing_GenerateClubOverlapAttack(ILContext il)
+        {
+            ILCursor c = new(il);
+            if (!ILEdits.SetupForOverlapAttackDelegate(
+                    false,
+                    ILEdits.OverlapAttackMatchType.ExistingDamageType,
+                    "FalseSonBoss.SwatAwayPlayersSlam.OnEnter",
+                    il, c
+                )
+            )
+            {
+                return;
+            }
+
+            c.EmitDelegate<Action<OverlapAttack>>((overlapAttack) =>
+            {
+                if (overlapAttack != null)
+                {
+                    overlapAttack.damageType.damageSource = DamageSource.Primary;
+                }
+            });
+        }
+
         private static void FlyingVermin_Weapon_Spit_FireProjectile(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(DamageTypeCombo.GenericPrimary, "FlyingVermin.Weapon.Spit.FireProjectile", 3, il, c);
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(DamageTypeCombo.GenericPrimary, "FlyingVermin.Weapon.Spit.FireProjectile", 3, il, c);
         }
 
         private static void GolemMonster_ClapState_FixedUpdate(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.AttackerIsGameObject, "GolemMonster.ClapState.FixedUpdate", il, c);
+            if (!ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.AttackerIsGameObject, "GolemMonster.ClapState.FixedUpdate", il, c))
+            {
+                return;
+            }
+
             c.EmitDelegate<Action<EntityStates.GolemMonster.ClapState>>((clappingCheeks) =>
             {
                 clappingCheeks.attack.damageType.damageSource = DamageSource.Primary;
@@ -954,7 +1043,7 @@ namespace DamageSourceForEnemies
         private static void GravekeeperBoss_FireHook_FireSingleHook(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericSecondary,
                 "GravekeeperBoss.FireHook.FireSingleHook",
                 1,
@@ -965,7 +1054,7 @@ namespace DamageSourceForEnemies
         private static void GravekeeperMonster_Weapon_GravekeeperBarrage_FireBlob(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "GravekeeperMonster.Weapon.GravekeeperBarrage.FireBlob",
                 0,
@@ -988,7 +1077,7 @@ namespace DamageSourceForEnemies
             {
                 Util.LogILError(methodName, il, c);
             }
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 methodName,
                 8,
@@ -1005,7 +1094,7 @@ namespace DamageSourceForEnemies
             {
                 Util.LogILError(methodName, il, c);
             }
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 methodName,
                 8,
@@ -1024,13 +1113,13 @@ namespace DamageSourceForEnemies
             );
         }
 
-        private static void Halcyonite_WhirlwindRush_FixedUpdate(ILContext il)
+        private static void Halcyonite_WhirlWindPersuitCycle_UpdateAttack(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
-                DamageTypeCombo.GenericUtility,
-                "Halcyonite.WhirlwindRush.FixedUpdate",
-                1,
+            ILEdits.SetDamageSourceForBlastAttack(
+                DamageSource.Utility,
+                ILEdits.BlastAttackMatchType.ExistingDamageType,
+                "Halcyonite.WhirlWindPersuitCycle.UpdateAttack",
                 il, c
             );
         }
@@ -1038,7 +1127,7 @@ namespace DamageSourceForEnemies
         private static void HermitCrab_FireMortar_Fire(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "HermitCrab.FireMortar.Fire",
                 18,
@@ -1049,7 +1138,7 @@ namespace DamageSourceForEnemies
         private static void ImpBossMonster_FireVoidspikes_FireSpikeAuthority(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "ImpBossMonster.FireVoidspikes.FireSpikeAuthority",
                 1,
@@ -1060,12 +1149,17 @@ namespace DamageSourceForEnemies
         private static void ImpBossMonster_FireVoidspikes_OnEnter(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.SetupForOverlapAttackDelegate(
-                true,
-                ILEdits.OverlapAttackMatchType.ExistingDamageType,
-                "ImpBossMonster.FireVoidspikes.OnEnter",
-                il, c
-            );
+            if (!ILEdits.SetupForOverlapAttackDelegate(
+                    true,
+                    ILEdits.OverlapAttackMatchType.ExistingDamageType,
+                    "ImpBossMonster.FireVoidspikes.OnEnter",
+                    il, c
+                )
+            )
+            {
+                return;
+            }
+
             c.EmitDelegate<Action<EntityStates.ImpBossMonster.FireVoidspikes>>((overlordRangedAttack) =>
             {
                 if (overlordRangedAttack != null && overlordRangedAttack.attack != null)
@@ -1078,7 +1172,11 @@ namespace DamageSourceForEnemies
         private static void ImpBossMonster_GroundPound_OnEnter(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.AttackerIsGameObject, "ImpBossMonster.GroundPound.OnEnter", il, c);
+            if (!ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.AttackerIsGameObject, "ImpBossMonster.GroundPound.OnEnter", il, c))
+            {
+                return;
+            }
+
             c.EmitDelegate<Action<EntityStates.ImpBossMonster.GroundPound>>((groundPound) =>
             {
                 groundPound.attack.damageType.damageSource = DamageSource.Secondary;
@@ -1088,12 +1186,17 @@ namespace DamageSourceForEnemies
         private static void ImpMonster_DoubleSlash_OnEnter(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.SetupForOverlapAttackDelegate(
-                true,
-                ILEdits.OverlapAttackMatchType.ExistingDamageType,
-                "ImpMonster.DoubleSlash.OnEnter",
-                il, c
-            );
+            if (!ILEdits.SetupForOverlapAttackDelegate(
+                    true,
+                    ILEdits.OverlapAttackMatchType.ExistingDamageType,
+                    "ImpMonster.DoubleSlash.OnEnter",
+                    il, c
+                )
+            )
+            {
+                return;
+            }
+
             c.EmitDelegate<Action<EntityStates.ImpMonster.DoubleSlash>>((doubleSlash) =>
             {
                 if (doubleSlash != null && doubleSlash.attack != null)
@@ -1106,7 +1209,11 @@ namespace DamageSourceForEnemies
         private static void JellyfishMonster_JellyNova_Detonate(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.AttackerIsGameObject, "JellyfishMonster.JellyNova.Detonate", il, c);
+            if (!ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.AttackerIsGameObject, "JellyfishMonster.JellyNova.Detonate", il, c))
+            {
+                return;
+            }
+
             c.EmitDelegate<Action<EntityStates.JellyfishMonster.JellyNova>>((explosion) =>
             {
                 explosion.attack.damageType.damageSource = DamageSource.Secondary;
@@ -1116,7 +1223,7 @@ namespace DamageSourceForEnemies
         private static void LemurianBruiserMonster_FireMegaFireball_FixedUpdate(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "LemurianBruiserMonster.FireMegaFireball.FixedUpdate",
                 6,
@@ -1142,12 +1249,17 @@ namespace DamageSourceForEnemies
         private static void LemurianMonster_Bite_OnEnter(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.SetupForOverlapAttackDelegate(
-                true,
-                ILEdits.OverlapAttackMatchType.BasicDamageCalculation,
-                "LemurianMonster.Bite.OnEnter",
-                il, c
-            );
+            if (!ILEdits.SetupForOverlapAttackDelegate(
+                    true,
+                    ILEdits.OverlapAttackMatchType.BasicDamageCalculation,
+                    "LemurianMonster.Bite.OnEnter",
+                    il, c
+                )
+            )
+            {
+                return;
+            }
+
             c.EmitDelegate<Action<EntityStates.LemurianMonster.Bite>>((biteAttack) =>
             {
                 if (biteAttack != null && biteAttack.attack != null)
@@ -1160,7 +1272,7 @@ namespace DamageSourceForEnemies
         private static void LemurianMonster_FireFireball_OnEnter(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "LemurianMonster.FireFireball.OnEnter",
                 2,
@@ -1171,7 +1283,7 @@ namespace DamageSourceForEnemies
         private static void LunarGolem_FireTwinShots_FireSingle(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "LunarGolem.FireTwinShots.FireSingle",
                 2,
@@ -1197,7 +1309,7 @@ namespace DamageSourceForEnemies
         private static void LunarWisp_SeekingBomb_FireBomb(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericSecondary,
                 "LunarWisp.SeekingBomb.FireBomb",
                 3,
@@ -1219,7 +1331,7 @@ namespace DamageSourceForEnemies
         private static void MiniMushroom_SporeGrenade_FireGrenade(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "MiniMushroom.SporeGrenade.FireGrenade",
                 18,
@@ -1241,7 +1353,11 @@ namespace DamageSourceForEnemies
         private static void ParentMonster_GroundSlam_FixedUpdate(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.AttackerIsGameObject, "ParentMonster.GroundSlam.FixedUpdate", il, c);
+            if (!ILEdits.SetupForBlastAttackDelegate(ILEdits.BlastAttackMatchType.AttackerIsGameObject, "ParentMonster.GroundSlam.FixedUpdate", il, c))
+            {
+                return;
+            }
+
             c.EmitDelegate<Action<EntityStates.ParentMonster.GroundSlam>>((groundSlamAttack) =>
             {
                 groundSlamAttack.attack.damageType.damageSource = DamageSource.Primary;
@@ -1251,7 +1367,7 @@ namespace DamageSourceForEnemies
         private static void RoboBallBoss_Weapon_FireDelayKnockup_OnEnter(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericSpecial,
                 "RoboBallBoss.Weapon.FireDelayKnockup.OnEnter",
                 10,
@@ -1262,7 +1378,7 @@ namespace DamageSourceForEnemies
         private static void RoboBallBoss_Weapon_FireEyeBlast_FixedUpdate(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "RoboBallBoss.Weapon.FireEyeBlast.FixedUpdate",
                 7,
@@ -1283,7 +1399,7 @@ namespace DamageSourceForEnemies
         private static void ScavMonster_FireEnergyCannon_OnEnter(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "ScavMonster.FireEnergyCannon.OnEnter",
                 4,
@@ -1294,7 +1410,7 @@ namespace DamageSourceForEnemies
         private static void ScavMonster_ThrowSack_Fire(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericSecondary,
                 "ScavMonster.ThrowSack.Fire",
                 17,
@@ -1306,7 +1422,7 @@ namespace DamageSourceForEnemies
         {
             // why is this a secondary?
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericSecondary,
                 "Scorchling.ScorchlingLavaBomb.Spit",
                 18,
@@ -1346,7 +1462,7 @@ namespace DamageSourceForEnemies
         private static void TitanMonster_FireGoldMegaLaser_FixedUpdate(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericSpecial,
                 "TitanMonster.FireGoldMegaLaser.FixedUpdate",
                 1,
@@ -1373,7 +1489,7 @@ namespace DamageSourceForEnemies
         private static void TitanRockController_Fire(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericUtility,
                 "RoR2.TitanRockController.Fire",
                 5,
@@ -1384,7 +1500,7 @@ namespace DamageSourceForEnemies
         private static void UrchinTurret_Weapon_MinigunFire_OnFireAuthority(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "UrchinTurret.Weapon.MinigunFire.OnFireAuthority",
                 4,
@@ -1406,7 +1522,7 @@ namespace DamageSourceForEnemies
         private static void VagrantMonster_FireTrackingBomb_FireBomb(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericSecondary,
                 "VagrantMonster.FireTrackingBomb.FireBomb",
                 3,
@@ -1417,7 +1533,7 @@ namespace DamageSourceForEnemies
         private static void VagrantMonster_Weapon_JellyBarrage_FireBlob(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "VagrantMonster.Weapon.JellyBarrage.FireBlob",
                 0,
@@ -1428,12 +1544,17 @@ namespace DamageSourceForEnemies
         private static void VoidInfestor_Infest_OnEnter(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.SetupForOverlapAttackDelegate(
-                true,
-                ILEdits.OverlapAttackMatchType.ExistingDamageType,
-                "VoidInfestor.Infest.OnEnter",
-                il, c
-            );
+            if (!ILEdits.SetupForOverlapAttackDelegate(
+                    true,
+                    ILEdits.OverlapAttackMatchType.ExistingDamageType,
+                    "VoidInfestor.Infest.OnEnter",
+                    il, c
+                )
+            )
+            {
+                return;
+            }
+
             c.EmitDelegate<Action<EntityStates.VoidInfestor.Infest>>((infestAttack) =>
             {
                 if (infestAttack != null && infestAttack.attack != null)
@@ -1476,7 +1597,7 @@ namespace DamageSourceForEnemies
             {
                 Util.LogILError(methodName, il, c);
             }
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericSpecial,
                 methodName,
                 3,
@@ -1493,7 +1614,7 @@ namespace DamageSourceForEnemies
             {
                 Util.LogILError(methodName, il, c);
             }
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericSpecial,
                 methodName,
                 3,
@@ -1504,7 +1625,7 @@ namespace DamageSourceForEnemies
         private static void VoidMegaCrab_Weapon_FireCrabCannonBase_FireProjectile(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "VoidMegaCrab.Weapon.FireCrabCannonBase.FireProjectile",
                 5,
@@ -1552,7 +1673,7 @@ namespace DamageSourceForEnemies
         private static void Vulture_Weapon_FireWindblade_OnEnter(ILContext il)
         {
             ILCursor c = new(il);
-            ILEdits.ReplaceNullDamageTypeComboInFireProjectile(
+            ILEdits.AddDamageTypeComboToFireProjectileWithoutDamageType(
                 DamageTypeCombo.GenericPrimary,
                 "Vulture.Weapon.FireWindblade.OnEnter",
                 3,
