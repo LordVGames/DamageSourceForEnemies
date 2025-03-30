@@ -2,6 +2,7 @@
 using UnityEngine.AddressableAssets;
 using RoR2;
 using RoR2.Projectile;
+using BepInEx.Configuration;
 
 namespace DamageSourceForEnemies
 {
@@ -9,45 +10,46 @@ namespace DamageSourceForEnemies
     {
         internal static void EditAssetsBasedOnConfig()
         {
-            EditMushroomSporeDotZone();
-            EditBeetleQueenAcidDotZone();
-            EditVoidlingMultiLaserDotZone();
+            // mini mushrum shot
+            SetDamageZoneAssetDamageSource(
+                "RoR2/Base/MiniMushroom/SporeGrenadeProjectileDotZone.prefab",
+                ConfigOptions.MushroomDamageZoneDamageSource,
+                DamageSource.Primary
+            );
+
+            // beetle queen spit
+            SetDamageZoneAssetDamageSource(
+                "RoR2/Base/Beetle/BeetleQueenAcid.prefab",
+                ConfigOptions.BeetleQueenDamageZoneDamageSource,
+                DamageSource.Primary
+            );
+
+            // voidling multi-shot laser (not the one that shoots plasma-shrimp-like projectiles)
+            SetDamageZoneAssetDamageSource(
+                "RoR2/DLC1/VoidRaidCrab/VoidRaidCrabMultiBeamDotZone.prefab",
+                ConfigOptions.VoidlingDamageZoneDamageSource,
+                DamageSource.Secondary
+            );
+
+            // scorch wurm shot
+            SetDamageZoneAssetDamageSource(
+                "RoR2/DLC2/Scorchling/LavaBombHeatOrbProjectile.prefab",
+                ConfigOptions.ScorchWurmDamageZoneDamageSource,
+                DamageSource.Secondary
+            );
+
         }
 
-        private static void EditMushroomSporeDotZone()
+        private static void SetDamageZoneAssetDamageSource(string assetPath, ConfigEntry<bool> associatedConfigEntry, DamageSource damageSource)
         {
-            if (!ConfigOptions.EnableMushroomDamageZoneDamageSource.Value)
+            if (!associatedConfigEntry.Value)
             {
                 return;
             }
 
-            GameObject mushroomSporeDamageZone = Addressables.LoadAssetAsync<GameObject>("RoR2/Base/MiniMushroom/SporeGrenadeProjectileDotZone.prefab").WaitForCompletion();
-            ProjectileDamage mushroomSporeProjectileDamage = mushroomSporeDamageZone.GetComponent<ProjectileDamage>();
-            mushroomSporeProjectileDamage.damageType.damageSource = DamageSource.Primary;
-        }
-
-        private static void EditBeetleQueenAcidDotZone()
-        {
-            if (!ConfigOptions.EnableBeetleQueenDamageZoneDamageSource.Value)
-            {
-                return;
-            }
-
-            GameObject beetleQueenAcidDamageZone = Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Beetle/BeetleQueenAcid.prefab").WaitForCompletion();
-            ProjectileDamage beetleQueenAcidProjectileDamage = beetleQueenAcidDamageZone.GetComponent<ProjectileDamage>();
-            beetleQueenAcidProjectileDamage.damageType.damageSource = DamageSource.Primary;
-        }
-
-        private static void EditVoidlingMultiLaserDotZone()
-        {
-            if (!ConfigOptions.EnableVoidlingDamageZoneDamageSource.Value)
-            {
-                return;
-            }
-
-            GameObject voidlingMultiBeamDamageZone = Addressables.LoadAssetAsync<GameObject>("RoR2/DLC1/VoidRaidCrab/VoidRaidCrabMultiBeamDotZone.prefab").WaitForCompletion();
-            ProjectileDamage voidlingMultiBeamProjectileDamage = voidlingMultiBeamDamageZone.GetComponent<ProjectileDamage>();
-            voidlingMultiBeamProjectileDamage.damageType.damageSource = DamageSource.Secondary;
+            GameObject damageZone = Addressables.LoadAssetAsync<GameObject>(assetPath).WaitForCompletion();
+            ProjectileDamage projectileDamage = damageZone.GetComponent<ProjectileDamage>();
+            projectileDamage.damageType.damageSource = damageSource;
         }
     }
 }

@@ -1438,7 +1438,13 @@ namespace DamageSourceForEnemies
                     x => x.MatchStloc(3)
                 ))
             {
-                Util.LogILError("Squid.SquidWeapon.FireSpine.FireOrbArrow", il, c);
+                if (!c.TryGotoNext(MoveType.After,
+                    x => x.MatchCallOrCallvirt(out _),
+                    x => x.MatchStloc(3)
+                    ))
+                {
+                    Util.LogILError("Squid.SquidWeapon.FireSpine.FireOrbArrow", il, c);
+                }
             }
 
             c.Emit(OpCodes.Ldloc_3);

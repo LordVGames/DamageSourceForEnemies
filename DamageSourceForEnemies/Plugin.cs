@@ -1,4 +1,5 @@
 using BepInEx;
+using RoR2;
 using R2API.Utils;
 
 namespace DamageSourceForEnemies
@@ -10,7 +11,7 @@ namespace DamageSourceForEnemies
         public const string PluginGUID = PluginAuthor + "." + PluginName;
         public const string PluginAuthor = "LordVGames";
         public const string PluginName = "DamageSourceForEnemies";
-        public const string PluginVersion = "1.1.0";
+        public const string PluginVersion = "1.2.0";
         public void Awake()
         {
             Log.Init(Logger);
