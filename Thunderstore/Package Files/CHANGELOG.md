@@ -1,3 +1,7 @@
+## 1.2.1
+
+- Add support for [AugmentedVoidReaver](https://thunderstore.io/c/riskofrain2/p/Nuxlar/AugmentedVoidReaver/)
+
 ## 1.2.0
 
 - Changed the config options' section name
