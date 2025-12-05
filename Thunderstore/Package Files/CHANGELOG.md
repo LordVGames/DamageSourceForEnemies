@@ -1,3 +1,22 @@
+## 2.0.0
+
+- Fixed for AC release
+- Added DamageSources for AC enemies, bosses and drones
+- Huge internal refactor
+- - All hooks have been redone (somewhat) & ported to MonoDetour
+- Made drone DamageSources a config option
+- - This is incase it's too OP with operator's nanobugged debuff
+- Fixed a bunch of things from before not having a DamageSource
+- - Clay Templar tar airblast
+- - Imp Overlord teleport
+- - Alloy Worship Unit leftover ground damage zones from it's projectiles
+- - Both worm bosses contact damage
+- - Void Jailer tether damage tick
+- - Void Devastator sticky bomb shots explosions
+- - Scorch wurm ground breach blast
+- Added support for [EnemiesPlusPlus](https://thunderstore.io/c/riskofrain2/p/score/EnemiesPlusPlus/)
+- Made all damage zone config options default to true
+
 ## 1.2.1
 
 - Add support for [AugmentedVoidReaver](https://thunderstore.io/c/riskofrain2/p/Nuxlar/AugmentedVoidReaver/)
