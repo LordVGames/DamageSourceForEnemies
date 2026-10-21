@@ -1,3 +1,7 @@
+## 2.1.1
+
+- Forgot to change manifest description whoops
+
 ## 2.1.0
 
 - Fixed for DLC4 and added support for its enemies
