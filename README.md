@@ -3,11 +3,12 @@ In vanilla the majority of enemy attacks don't have a DamageSource set, which me
 
 <sub><sup>idk how but the before and after gifs changed the breaching fin outline color. it's still the normal green fin being used don't worry</sup></sub>
 ### Before
-![Risk_of_Rain_2_moVwrPAJok - Copy2](https://github.com/user-attachments/assets/87c3186d-3d5e-4205-995f-3f6179d39f72)
+![Before](https://github.com/user-attachments/assets/e12ff861-4b58-486a-b662-47f3a56cf15a)
 
 
 ### After
-![Risk_of_Rain_2_XefHa4uNTy2](https://github.com/user-attachments/assets/6d042862-b7e8-4266-8feb-efb10cda6ac4)
+![After](https://github.com/user-attachments/assets/0f22e385-8ebd-4aba-a3c0-b5103b568243)
+
 
 ## Mod Support
 This mod also supports a few other mods that edit/add enemy attacks:
