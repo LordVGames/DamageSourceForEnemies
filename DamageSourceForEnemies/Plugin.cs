@@ -1,4 +1,5 @@
 using BepInEx;
+using HarmonyLib;
 using Mono.Cecil.Cil;
 using MonoDetour;
 using MonoDetour.Cil;
@@ -8,38 +9,38 @@ using MonoMod.Cil;
 using RoR2;
 using System;
 using System.Reflection;
-using AugmentedVoidReaverMod = DamageSourceForEnemies.ILHooks.Mods.AugmentedVoidReaverMod;
+using AugmentedVoidReaverMod = DamageSourceForEnemies.Hooks.Mods.AugmentedVoidReaverMod;
+namespace DamageSourceForEnemies;
 
-namespace DamageSourceForEnemies
+
+[BepInAutoPlugin]
+[BepInDependency(AugmentedVoidReaverMod.GUID, BepInDependency.DependencyFlags.SoftDependency)]
+[BepInDependency(EnemiesPlus.EnemiesPlusPlugin.PluginGUID, BepInDependency.DependencyFlags.SoftDependency)]
+public partial class Plugin : BaseUnityPlugin
 {
-    [BepInAutoPlugin]
-    [BepInDependency(AugmentedVoidReaverMod.GUID, BepInDependency.DependencyFlags.SoftDependency)]
-    [BepInDependency(EnemiesPlus.EnemiesPlusPlugin.PluginGUID, BepInDependency.DependencyFlags.SoftDependency)]
-    public partial class Plugin : BaseUnityPlugin
+    public void Awake()
     {
-        public void Awake()
-        {
-            Log.Init(Logger);
-            ConfigOptions.BindConfigEntries(Config);
-            MonoDetourManager.InvokeHookInitializers(typeof(Plugin).Assembly, reportUnloadableTypes: false);
-        }
+        Log.Init(Logger);
+        ConfigOptions.BindConfigEntries(Config);
+        MonoDetourManager.InvokeHookInitializers(typeof(Plugin).Assembly, reportUnloadableTypes: false);
+    }
 
 
 #if DEBUG
-        [MonoDetourTargets(typeof(CharacterMaster))]
-        private static class DebugLogDamageSourceOnHit
+    [MonoDetourTargets(typeof(CharacterMaster))]
+    private static class DebugLogDamageSourceOnHit
+    {
+        [MonoDetourHookInitialize]
+        internal static void Setup()
         {
-            [MonoDetourHookInitialize]
-            internal static void Setup()
-            {
-                Mdh.RoR2.CharacterMaster.OnBodyDamaged.Postfix(LogDamageSource);
-            }
-
-            private static void LogDamageSource(CharacterMaster self, ref DamageReport damageReport)
-            {
-                Log.Debug($"damageType == {damageReport.damageInfo.damageType}");
-            }
+            Mdh.RoR2.CharacterMaster.OnBodyDamaged.Postfix(LogDamageSource);
         }
-#endif
+
+
+        private static void LogDamageSource(CharacterMaster self, ref DamageReport damageReport)
+        {
+            Log.Debug($"damageType == {damageReport.damageInfo.damageType} ({damageReport.damageInfo.damageType.IsDamageSourceSkillBased})");
+        }
     }
+#endif
 }

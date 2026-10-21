@@ -1,3 +1,18 @@
+## 2.1.0
+
+- Fixed for DLC4 and added support for its enemies
+- Removed some DamageSource additions due to them being officially added!
+- - All drone, scavenger, and halcyonite attacks, plus some other random enemy attacks
+
+## 2.0.2
+
+- Fixed Clay Templars not being slowed down while using their minigun
+- - If there are any other enemies that should get a debuff while attacking but don't, tell me
+
+## 2.0.1
+
+- Fixed for AC patch 1
+
 ## 2.0.0
 
 - Fixed for AC release
